@@ -1,0 +1,337 @@
+---
+title: "trab regressão - códigos"
+author: "Alessandro"
+date: "2025-05-26"
+output: html_document
+encoding: UTF-8
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+dados <- read.csv("C:/Users/Alessandro Silva/Downloads/kc_house_data.csv", fileEncoding = "UTF-8")
+library(dplyr)
+library(sf)
+library(ggplot2)
+library(sjPlot)
+library(ggcorrplot)
+library(car)
+library(MASS)
+```
+
+```{r}
+dados$date <- as.Date(dados$date, format = "%Y%m%dT%H%M%S")
+dados$year <- format(dados$date, "%Y")
+dados$year <- as.numeric(dados$year)
+dados$house_age <- dados$year - dados$yr_built
+dados$anosref <- dados$yr_renovated - dados$yr_built
+dados$anosref[dados$anosref < 0] <- dados$house_age[dados$anosref < 0]
+log_price <- log(dados$price)
+```
+
+```{r}
+glimpse(dados)
+```
+DICIONÁRIO DE VARIÁVEIS:
+id – ID único para cada casa vendida
+date – Data da venda da casa
+price – Preço de cada casa vendida (em dólares)
+bedrooms – Número de quartos
+bathrooms – Número de banheiros, onde 0.5 representa um lavabo (banheiro sem chuveiro)
+sqft_living – Área interna da casa em pés quadrados (1 pé² ≈ 0,093 m²)
+sqft_lot – Área total do terreno em pés quadrados
+floors – Número de andares
+waterfront – Variável indicadora (1 ou 0) se a casa tem vista para a água (beira-mar, lago, etc.)
+view – Índice de 0 a 4 sobre a qualidade da vista da propriedade
+0 = No view, 1 = Fair 2 = Average, 3 = Good, 4 = Excellent
+condition – Índice de 1 a 5 sobre o estado geral da casa
+1 = Poor- Worn out, 2 = Fair- Badly worn, 3 = Average, 4 = Good, 5= Very Good
+
+grade – Índice de 1 a 13 sobre o nível de construção e design da casa, onde:
+1 a 3 = abaixo do padrão
+7 = padrão médio
+11 a 13 = alto padrão
+
+sqft_above – Área da casa que está acima do nível do solo (em pés quadrados)
+sqft_basement – Área do porão (abaixo do nível do solo) em pés quadrados
+yr_built – Ano de construção da casa
+yr_renovated – Ano da última reforma da casa
+zipcode – Código postal (CEP) da região onde a casa está localizada
+lat – Latitude
+long – Longitude
+sqft_living15 – Área média de espaço habitável interno das 15 casas mais próximas
+sqft_lot15 – Área média dos terrenos das 15 casas mais próximas
+house_age - Idade da Casa
+anosref - Anos apos ultima reforma
+
+
+Analise descritiva
+```{r}
+dados %>%
+  dplyr::select(price, bedrooms, bathrooms, sqft_living, sqft_lot, floors, waterfront, view, condition, grade, 
+                sqft_above, sqft_basement, yr_built, yr_renovated, zipcode, lat, long, 
+                sqft_living15, sqft_lot15, year, house_age, anosref) %>%
+  summary()
+```
+
+Gráfico King County
+```{r}
+dados$faixa_preco <- cut(dados$price,
+                         breaks = c(0, 250000, 500000, 750000, 1000000, Inf),
+                         labels = c("<250k", "250–500k", "500–750k", "750k–1M", ">1M"),
+                         include.lowest = TRUE)
+
+```
+
+```{r}
+king <- st_read("C:/Users/Alessandro Silva/Downloads/grafico reg/tl_2021_53033_roads.shp")
+```
+```{r}
+dados_sf <- st_as_sf(dados, coords = c("long", "lat"), crs = 4326)
+
+```
+
+```{r}
+ggplot() +
+  geom_sf(data = king, fill = "gray90", color = "gray60") +
+  geom_sf(data = dados_sf, aes(color = faixa_preco), alpha = 0.5, size = 0.7) +
+  scale_color_viridis_d(name = "Faixa de preço") +
+  labs(title = "Casas em King County por faixa de preço (com mapa real)") +
+  theme_minimal()
+```
+Evolução do preço médio por ano
+```{r}
+aggregate(price ~ year, data = dados, FUN = mean)
+```
+
+MODELO de REGRESSÃO
+1-  ajustando variaveis
+adicionando variaveis house_age(idade da casa), e anosref (anos apos ultima reforma, se nao teve reforma é = idade da casa)
+
+filtrar bedrooms
+
+```{r}
+dados <- dados %>% filter(bedrooms <= 15)
+boxplot(dados$bedrooms)
+```
+factors
+```{r}
+dados$log_price <- log(dados$price)
+dados$waterfront <- as.factor(dados$waterfront)
+dados$view <- as.factor(dados$view)
+dados$condition <- as.factor(dados$condition)
+```
+
+```{r}
+mod_inicial <- lm(price ~ . -log_price -id -house_age -anosref, data = dados)
+summary(mod_inicial)
+par(mfrow = c(2, 2))
+plot(mod_inicial)
+```
+Este modelo não é confiável a princípio, muitas variáveis se misturam e ele fica estranho.
+
+Dito isso, as variáveis interessantes a partir de então são as fundamentais pro preço de uma casa.
+
+```{r}
+mod <- lm(price ~ bedrooms + bathrooms + sqft_living + sqft_lot +
+            floors + waterfront + view + condition + grade +
+            sqft_above + sqft_basement + house_age + anosref +
+            lat + long, data = dados)
+summary(mod)
+par(mfrow = c(2, 2))
+plot(mod)
+```
+
+Residuals vs Fitted:
+Os resíduos não estão totalmente aleatórios — indicam não linearidade e heterocedasticidade (variância dos resíduos cresce com o preço).
+
+Q-Q Plot:
+Curva nos extremos → resíduos não seguem bem uma distribuição normal.
+
+Scale-Location:
+Tendência crescente → heterocedasticidade confirmada.
+
+Residuals vs Leverage:
+Alguns pontos com alta influência (ex: 92559, 76350) — outliers influentes detectados.
+
+Transformar price em log(price), pois o modelo tem resíduos com alta variância, assimetria e outliers
+Se você usar logaritmo da resposta, os coeficientes passam a ser interpretações percentuais:
+Um coeficiente de 0.05 significa que um aumento de 1 unidade naquela variável aumenta o preço em ~5% (mantidas as outras constantes).
+
+Retirei sqft_basement pois está colinear com alguma variavel
+
+TRATANDO A VARIÁVEL RESPOSTA
+- aplicando log 
+```{r}
+par(mfrow = c(1, 2))
+
+log_price <- log(dados$price)
+hist_data <- hist(log_price,
+                  breaks = 60,
+                  col = "darkblue",
+                  border = "white",
+                  main = "Histograma de log(Preço)",
+                  xlab = "log(Preço)",
+                  ylab = "Frequência")
+
+curve(dnorm(x,
+            mean = mean(log_price),
+            sd = sd(log_price)) * length(log_price) * diff(hist_data$breaks)[1],
+      col = "red", 
+      lwd = 2, 
+      add = TRUE)
+
+
+hist(dados$price,
+     breaks = 60,
+     col = "darkblue",
+     border = "white",
+     main = "Histograma de Preço (Original)",
+     xlab = "Preço (em $)",
+     ylab = "Frequência")
+
+par(mfrow = c(1, 1))
+```
+
+MODELO FINAL
+```{r}
+mod_log <- lm(log_price ~ bedrooms + bathrooms + log(sqft_living) + log(sqft_lot) 
+                + floors + waterfront + view + condition + grade +
+                house_age + lat + long + house_age * condition , data = dados)
+summary(mod_log)
+plot(mod_log)
+```
+SELEÇÃO DE MODELO AIC E BIC
+```{r}
+
+modelo_aic <- stepAIC(mod_log, direction = "backward", trace = TRUE)
+n <- nrow(dados)
+modelo_bic <- stepAIC(mod_log, direction = "backward", k = log(n), trace = TRUE)
+```
+
+```{r}
+summary(modelo_bic)
+cat("\n--- Comparando o R² Ajustado ---\n")
+print(paste("R² Ajustado do Modelo Original (AIC):", round(summary(mod_log)$adj.r.squared, 5)))
+print(paste("R² Ajustado do Modelo Simplificado (BIC):", round(summary(modelo_bic)$adj.r.squared, 5)))
+```
+Para refinar o modelo, foram utilizados os critérios de seleção de variáveis AIC e BIC. O critério AIC sugeriu a manutenção do modelo completo, enquanto o BIC, que impõe uma penalidade maior à complexidade, indicou a remoção da variável log(sqft_lot). MAs como o R^2 ajustado n mudava nada, preferi ficar com o AIC.
+
+TESTANDO MULTICOLINEARIDADE POR VIF
+```{r}
+#sem interação
+mod_para_vif <- lm(log_price ~ bedrooms + bathrooms + log(sqft_living) + log(sqft_lot) 
+                   + floors + waterfront + view + condition + grade +
+                   house_age + lat + long, data = dados)
+vif_resultados <- vif(mod_para_vif)
+cat("--- Fator de Inflação da Variância (VIF) ---\n")
+print(vif_resultados)
+
+barplot(vif_resultados, main = "Valores VIF", horiz = TRUE, las = 1)
+abline(v = 5, col = "red", lty = 2) 
+```
+Não há multicolinearidade problemática no seu modelo.
+
+
+TRATANDO OUTLIERS
+
+METODO 1:
+RETIRANDO OS MAIORES 1%
+
+```{r}
+# Distâncias de Cook
+cooks_d <- cooks.distance(mod_log)
+
+# Selecionar apenas os top 1% mais influentes
+limiar_percentil <- quantile(cooks_d, 0.99)
+outliers <- which(cooks_d > limiar_percentil)
+
+length(outliers)  # quantos serão removidos
+
+```
+
+Modelo sem outliers, que são maiores que 1%
+```{r}
+dados_sem_outliers <- dados[-outliers, ]
+mod_log_sem_outliers <- lm(log_price ~ bedrooms + bathrooms + log(sqft_living) + log(sqft_lot) 
+                + floors + waterfront + view + condition + grade +
+                house_age + lat + long + house_age * condition, data = dados_sem_outliers)
+summary(mod_log)
+summary(mod_log_sem_outliers)
+
+plot(mod_log_sem_outliers)
+
+```
+METODO 2:
+Usando cooks
+
+```{r}
+cooks_d <- cooks.distance(mod_log)
+sort(abs(cooks_d))[1:100]
+```
+
+```{r}
+media_cook <- mean(cooks_d, na.rm = TRUE)
+outliers <- which(abs(cooks_d) > pf(0.5, 19, 21593, lower.tail = FALSE) )
+
+```
+```{r}
+length(outliers)
+```
+
+```{r}
+plot(mod_log, which = 4)  # gráfico de Cook's distance
+abline(h = 0.5, col = "red", lty = 2)
+
+```
+
+Metodo 3 
+dfbeta
+```{r}
+
+dfb <- dfbetas(mod_log)[, -1]
+
+n <- nrow(dados)
+limite <- 2 / sqrt(n)
+
+out <- which(abs(dfb) > limite , arr.ind = TRUE)
+
+
+
+```
+
+```{r}
+length(out)
+```
+Conclusão:NAO COMPENSA RETIRAR OS OUTLIERS MANTER O MODELO !!
+
+
+SJPLOT - INTERAÇÂO
+```{r}
+anova(mod_log)
+```
+
+```{r}
+plot_model(mod_log, type = "pred", terms = c("house_age", "condition"), ci.lvl = NA )
+```
+ANALISE: Quando a casa tem Condição ruim ela perde valor conforme o tempo, porém quando a casa tem uma boa condição ela ganha valor com o tempo !
+
+`
+```{r}
+
+predicoes_log <- predict(mod_log, newdata = dados)
+predicoes_dolares <- exp(predicoes_log)
+valores_reais <- dados$price
+residuos <- valores_reais - predicoes_dolares
+
+rmse <- sqrt(mean(residuos^2))
+
+cat("--- Performance Preditiva do Modelo ---\n")
+print(paste0("O RMSE do modelo é de aproximadamente: $", round(rmse, 0)))
+
+cat("\n--- Resumo do Preço Real dos Imóveis ---\n")
+summary(valores_reais)
+```
+

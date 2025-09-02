@@ -1,0 +1,357 @@
+---
+title: "Análise de Regressão: Fatores que Influenciam o Preço de Imóveis em King County"
+author: 
+  - Alessandro Silva
+lang: "pt-BR"
+output: 
+  pdf_document:
+    toc: false
+    fig_caption: true
+    number_sections: true
+    latex_engine: xelatex
+header-includes:
+  - \usepackage{multicol}
+  - \usepackage{booktabs}
+  - \usepackage{graphicx}
+  - \usepackage{float}
+  - \usepackage{caption}
+encoding: UTF-8
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+options(knitr.table.format = "latex")
+options(scipen = 999,digits=2)
+```
+
+```{r}
+dados <- read.csv("C:/Users/Alessandro Silva/Downloads/kc_house_data.csv", fileEncoding = "UTF-8")
+```
+
+
+```{r,message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(car)
+library(sjPlot)
+library(kableExtra)
+library(MASS)
+library(broom)
+library(knitr)
+library(sf)
+library(caret)
+```
+
+# 1. Introdução
+
+O mercado imobiliário apresenta variações de preços influenciadas por diversos fatores estruturais, geográficos e sociais. No contexto de King County, região que abrange a cidade de Seattle e áreas vizinhas, entender essas variações pode subsidiar decisões mais informadas por parte de compradores, vendedores, construtoras e gestores urbanos.
+
+Este trabalho tem como objetivo aplicar técnicas de regressão linear para identificar quais características dos imóveis influenciam significativamente o preço de venda. A modelagem estatística será realizada com base no banco de dados “kc_house_data.csv”, que contém informações detalhadas sobre imóveis vendidos em King County em 2014 e 2015.
+
+Ao longo do estudo, serão exploradas as relações entre variáveis como número de quartos e banheiros, metragem, ano de construção, localização geográfica e outros atributos com o preço de venda. A análise também buscará compreender o impacto de interações e a presença de multicolinearidade, bem como verificar a adequação do modelo por meio de testes diagnósticos.
+
+## 1.1 Objetivo Geral
+Investigar os principais fatores que influenciam o preço de venda de imóveis em King County, utilizando modelos de regressão linear com transformação logarítmica na variável resposta.
+
+## 1.2 Objetivos Específicos
+- Estimar o efeito das características estruturais dos imóveis (como número de quartos, banheiros e metragem) sobre o logaritmo do preço de venda;
+- Analisar o impacto da localização geográfica e das condições do imóvel no valor final de mercado;
+- Identificar quais variáveis explicativas apresentam associação estatisticamente significativa com o preço dos imóveis;
+- Avaliar a presença de variáveis com efeitos interativos ou não lineares relevantes para o preço dos imóveis;
+- Comparar diferentes especificações do modelo com base em critérios de ajuste, como AIC e BIC, buscando a melhor combinação de variáveis explicativas;
+- Gerar previsões de preço a partir do modelo final e avaliar sua capacidade preditiva.
+
+# 2. Banco de Dados
+O conjunto de dados utilizado neste trabalho é o "kc_house_data.csv", disponível publicamente no site Kaggle. Ele contém informações sobre 21.613 imóveis vendidos entre maio de 2014 e maio de 2015 no condado de King, estado de Washington (EUA), que inclui Seattle e outras cidades vizinhas.
+
+### Dicionário de Variáveis
+
+- id – ID único para cada casa vendida
+- date – Data da venda da casa
+- price – Preço de cada casa vendida (em dólares)
+- bedrooms – Número de quartos
+- bathrooms – Número de banheiros, onde 0.5 representa um lavabo (banheiro sem chuveiro)
+- sqft_living – Área interna da casa em pés quadrados (1 pé² ≈ 0,093 m²)
+- sqft_lot – Área total do terreno em pés quadrados
+- floors – Número de andares
+- waterfront – Variável indicadora (1 ou 0) se a casa tem vista para a água (beira-mar, lago, etc.)
+- view – Índice de 0 a 4 sobre a qualidade da vista da propriedade 0 = No view, 1 = Fair 2 = Average, 3 = Good, 4 = Excellent
+- condition – Índice de 1 a 5 sobre o estado geral da casa 1 = Poor- Worn out, 2 = Fair- Badly worn, 3 = Average, 4 = Good, 5= Very Good
+- grade – Índice de 1 a 13 sobre o nível de construção e design da casa, onde: 1 a 3 = abaixo do padrão 7 = padrão médio 11 a 13 = alto padrão
+- sqft_above – Área da casa que está acima do nível do solo (em pés quadrados)
+- sqft_basement – Área do porão (abaixo do nível do solo) em pés quadrados
+- yr_built – Ano de construção da casa
+- yr_renovated – Ano da última reforma da casa
+- zipcode – Código postal (CEP) da região onde a casa está localizada
+- lat – Latitude
+- long – Longitude
+- sqft_living15 – Área média de espaço habitável interno das 15 casas mais próximas
+- sqft_lot15 – Área média dos terrenos das 15 casas mais próximas
+- house_age - Idade da Casa
+- anosref - Anos apos ultima reforma
+
+# 3. Análise Exploratória
+
+```{r grafico-geografico, fig.cap="Distribuição espacial dos imóveis por faixa de preço", fig.width=8, fig.height=4, echo=FALSE, message=FALSE, warning=FALSE}
+dados$faixa_preco <- cut(dados$price,
+                         breaks = c(0, 250000, 500000, 750000, 1000000, Inf),
+                         labels = c("<250k", "250–500k", "500–750k", "750k–1M", ">1M"),
+                         include.lowest = TRUE)
+king <- st_read("C:/Users/Alessandro Silva/Downloads/grafico reg/tl_2021_53033_roads.shp")
+dados_sf <- st_as_sf(dados, coords = c("long", "lat"), crs = 4326)
+ggplot() +
+  geom_sf(data = king, fill = "gray90", color = "gray60") +
+  geom_sf(data = dados_sf, aes(color = faixa_preco), alpha = 0.5, size = 0.7) +
+  scale_color_viridis_d(name = "Faixa de preço") +
+  labs(title = "Casas em King County por faixa de preço (com mapa real)") +
+  theme_minimal()
+```
+
+A figura \@ref(tab:grafico-geografico)apresenta a distribuição geográfica dos imóveis em King County, classificados por faixas de preço. É possível observar que os imóveis com preços mais elevados (acima de 1 milhão de dólares) concentram-se majoritariamente nas regiões próximas ao lago Washington e em áreas com maior densidade urbana e acesso privilegiado. Já os imóveis de menor valor `(<250k)` distribuem-se em regiões periféricas, indicando um padrão espacial de valorização imobiliária. Essa informação reforça a importância de incluir variáveis de localização (latitude e longitude) no modelo de regressão, além de outras características estruturais do imóvel.
+
+
+
+
+
+
+
+
+
+
+
+## Pré-processamento
+```{r}
+dados <- read.csv("C:/Users/Alessandro Silva/Downloads/kc_house_data.csv")
+dados <- dados %>% 
+  filter(bedrooms <= 15) %>% 
+  mutate(
+    year = as.numeric(format(as.Date(date, format = "%Y%m%dT%H%M%S"), "%Y")),
+    house_age = year - yr_built,
+    anosref = ifelse(yr_renovated == 0, year - yr_built, yr_renovated - yr_built),
+    log_price = log(price),
+    waterfront = as.factor(waterfront),
+    view = as.factor(view),
+    condition = as.factor(condition)
+  )
+```
+
+A análise foi conduzida a partir de uma base de dados previamente limpa, contendo informações sobre imóveis vendidos em King County. Como primeira etapa, realizamos a exploração inicial das variáveis, com a construção de histogramas para avaliar a distribuição das variáveis contínuas, e análise descritiva prévia, em que os preços dos imóveis variam entre `$75.000` e `$7.700.000`, com média de aproximadamente `$540.000`. Em particular, a variável resposta (preço de venda dos imóveis) apresentou assimetria positiva. Por isso, adotou-se a transformação logarítmica da variável, passando a modelar o logaritmo do preço, o que favorece a linearização das relações e estabiliza a variância
+.
+```{r hist-preco, fig.cap="Histogramas do preço original e do log(preço)", fig.width=8, fig.height=4}
+par(mfrow = c(1, 2))
+
+log_price <- log(dados$price)
+hist_data <- hist(log_price,
+                  breaks = 60,
+                  col = "darkblue",
+                  border = "white",
+                  main = "Variável log (Preço)",
+                  xlab = "log(Preço) - em log-dólares",
+                  ylab = "Frequência")
+
+curve(dnorm(x,
+            mean = mean(log_price),
+            sd = sd(log_price)) * length(log_price) * diff(hist_data$breaks)[1],
+      col = "red", 
+      lwd = 2, 
+      add = TRUE)
+
+hist(dados$price,
+     breaks = 60,
+     col = "darkblue",
+     border = "white",
+     main = "Variável de Preço (Original)",
+     xlab = "Preço (em $ - dólares)",
+     ylab = "Frequência")
+
+par(mfrow = c(1, 1))
+```
+
+## Modelagem Estatística:
+
+Para o modelo, escolhemos variáveis com fortes correlações e que faziam sentido para o estudo de atingir o objetivo de investigar os principais fatores que influenciam o preço de venda dos imóveis. Sendo elas:
+\begin{center}
+\begin{tabular}{ll}
+bedrooms & bathrooms \\
+log(sqft\_living) & floors \\
+waterfront & view \\
+condition & grade \\
+house\_age & lat \\
+long & house\_age * condition \\
+\end{tabular}
+\end{center}
+
+
+
+```{r figY,fig.cap = "Importância das variáveis em relaçao a log-price",fig.align='center',fig.width=4,fig.height=3}
+set.seed(123)
+modelo <- train(log_price ~ bedrooms + bathrooms + log(sqft_living) + log(sqft_lot) +
+                  floors + waterfront + view + condition + grade + 
+                  house_age + lat + long + house_age * condition,
+                data = dados, 
+                method = "lm")
+
+var_imp <- varImp(modelo)
+plot(var_imp, top = 15)
+```
+A Figura apresenta a importância relativa das variáveis explicativas no modelo de regressão linear, calculada a partir da função varImp() do pacote {caret}.
+
+Observa-se que:
+
+- As variáveis lat, grade e log(sqft_living) são as mais importantes no modelo, indicando que localização, qualidade da construção e tamanho da área útil da casa são fatores fortemente associados ao preço do imóvel.
+
+- bathrooms e view (principalmente view3 e view2) também apresentaram impacto relevante, sugerindo que o número de banheiros e a qualidade da vista influenciam a valorização do imóvel.
+
+- Variáveis como bedrooms, floors, long (longitude) e waterfront1 tiveram menor importância relativa, mas foram mantidas por apresentarem significância estatística ou papel estrutural relevante na especificação do modelo.
+
+- As interações entre idade da casa (house_age) e condição (condition) mostraram importância reduzida de forma isolada, mas ajudam a capturar efeitos diferenciados da idade conforme o estado de conservação do imóvel.
+
+### Modelagem Estatística:
+
+Com a base limpa e estruturada, variável resposta indicando simetria e variáveis preditoras selecionadas, seguimos para a modelagem estatística. Foram utilizdas algumas métricas de regressão linear, onde foi realizado um processo de seleção automática de variáveis utilizando o critério de informação de Akaike (AIC), com o objetivo de encontrar um modelo parcimonioso que explicasse bem a variação do log(preço) e indicasse as melhores variáveis. A partir do modelo resultante, analisamos a presença de multicolinearidade entre as variáveis explicativas por meio do índice de inflação da variância (VIF). Nenhuma variável apresentou VIF elevado, indicando ausência de colinearidade preocupante. Por fim, o modelo resultante foi então avaliado quanto aos seus resíduos, com base em gráficos de dispersão, Q-Q plot e outros diagnósticos, e a conclusão é que os pressupostos da regressão foram razoavelmente atendidos.
+
+Logo, o Modelo de Regressão Linear Múltipla final do esudo é dado por:
+
+
+$$
+\begin{aligned}
+\log(\mathrm{price}_i) =\ & \beta_0 + \beta_1 \cdot \mathrm{bedrooms}_i + \beta_2 \cdot \mathrm{bathrooms}_i + \beta_3 \cdot \log(\mathrm{sqft\_living}_i) + \beta_4 \cdot \log(\mathrm{sqft\_lot}_i) \\
+& + \beta_5 \cdot \mathrm{floors}_i + \beta_6 \cdot \mathrm{waterfront}_i + \beta_7 \cdot \mathrm{view}_i + \beta_8 \cdot \mathrm{condition}_i + \beta_9 \cdot \mathrm{grade}_i \\
+& + \beta_{10} \cdot \mathrm{house\_age}_i + \beta_{11} \cdot \mathrm{lat}_i + \beta_{12} \cdot \mathrm{long}_i + \beta_{13} \cdot (\mathrm{house\_age}_i \times \mathrm{condition}_i) + \varepsilon_i
+\end{aligned}
+$$
+
+
+```{r diagnostico-modelo, fig.cap="Gráficos de diagnóstico do modelo", fig.width=7, fig.height=6}
+mod_log <- lm(log_price ~ bedrooms + bathrooms + log(sqft_living) + log(sqft_lot) 
+                + floors + waterfront + view + condition + grade +
+                house_age + lat + long + house_age * condition , data = dados)
+```
+## Avaliação das Suposições do Modelo
+
+Para confiabilidade da interpretação dos parâmetros, as suposições do modelo devem ser atendidas.
+
+- Os resíduos seguem normalidade dos resíduos, provado por meio de gráficos Q-Q;
+```{r qq-residuos, fig.cap = "Gráficos de diagnóstico: Q-Q plot", fig.width=5, fig.height=3}
+qqnorm(residuals(mod_log))
+```
+
+
+- Há homoscedasticidade, baseado com gráficos de resíduos versus valores ajustados;
+```{r resid-vs-ajustado-base, fig.cap = "Gráfico de resíduos vs valores ajustados", fig.width=5, fig.height=3}
+plot(fitted(mod_log), residuals(mod_log),
+     main = "Resíduos vs Valores Ajustados",
+     pch = 20, col = "black")
+abline(h = 0, col = "red", lwd = 1.2)
+```
+
+
+- Ausência de influências excessivas em relação aos outliers, utilizando a distância de Cook;
+```{r outlier, fig.cap="Outliers por Cook's", fig.width=5, fig.height=3}
+cooks_d <- cooks.distance(mod_log)
+media_cook <- mean(cooks_d, na.rm = TRUE)
+outliers <- which(abs(cooks_d) > pf(0.5, 19, 21593, lower.tail = FALSE) )
+plot(mod_log, which = 4)  # gráfico de Cook's distance
+abline(h = 0.5, col = "red", lty = 2)
+```
+
+- Multicolinearidade, por meio do índice de inflação da variância (VIF), cujos valores não indicaram preocupações relevantes;
+```{r vif, fig.cap="Inflação da Variância", fig.width=5, fig.height=3}
+dados$house_age_c <- scale(dados$house_age, center = TRUE, scale = FALSE)
+mod_para_vif <- lm(log_price ~ bedrooms + bathrooms + log(sqft_living) + log(sqft_lot) 
+                   + floors + waterfront + view + condition + grade +
+                   house_age_c * condition + lat + long, data = dados)
+vif_resultados <- vif(mod_para_vif)
+cat("--- Fator de Inflação da Variância (VIF) ---\n")
+print(vif_resultados)
+
+barplot(vif_resultados, main = "Valores VIF", horiz = TRUE, las = 1)
+abline(v = 5, col = "red", lty = 2) 
+```
+
+-> Adequação geral do modelo, com auxílio de pacotes como sjPlot
+```{r interação, fig.cap="Interação em log-price", fig.width=5, fig.height=3}
+plot_model(mod_log, type = "pred", terms = c("house_age", "condition"), ci.lvl = NA )
+```
+
+### Interpretação dos Resultados do Modelo:
+
+```{r}
+coef_tabela <- tidy(mod_log)
+names(coef_tabela) <- c("Variável", "Estimativa", "Erro Padrão", "Estatística t", "Valor-p")
+kable(coef_tabela, 
+      format = "latex", 
+      booktabs = TRUE, 
+      caption = "Coeficientes estimados do modelo de regressão para log(preço)") %>%
+  kable_styling(latex_options = c("hold_position", "striped"), font_size = 10)
+```
+
+
+
+O modelo ajustado explica aproximadamente 76,4% da variação no logaritmo do preço dos imóveis (R² ajustado = 0,764), o que indica um bom poder explicativo. Os resíduos têm uma variação relativamente baixa (erro padrão residual = 0,26), e o teste F mostra que o modelo é estatisticamente significativo como um todo (p-valor < 0,0001).
+
+**Interpretação dos Coeficientes:**
+
+(Intercepto = `-45,97`): Esse valor é o ponto de partida do modelo, mas não tem interpretação direta prática, pois representa o log-preço quando todas as variáveis são zero, o que é irreal neste contexto pois o preço de uma casa depende de outras variáveis.
+
+Características Estruturais
+**bedrooms (`-0,027`):** A cada quarto a mais, o preço tende a diminuir cerca de `2,7%`, o que sugere que apenas o número de quartos, sem considerar o tamanho da casa, pode não agregar valor, ou pode estar associado a imóveis maiores mas menos valorizados por outros motivos.
+
+**bathrooms (`+0,071`):** Cada banheiro adicional aumenta o preço em torno de `7,1%`, indicando que banheiros são fortemente valorizados. 
+
+**log(sqft_living) (`+0,409`):** Um aumento de 1% na área construída implica aumento de aproximadamente `0,41%` no preço. Isso mostra que casas maiores, em termos de área útil, são mais caras.
+
+**log(sqft_lot) (`-0,005`):** Um aumento no tamanho do terreno tem impacto muito pequeno e negativo no preço. O efeito, embora significativo, não é expressivo.
+
+**floors (`+0,046`):** Um andar a mais está associado a `4,6%` de aumento no preço, sugerindo que casas com mais andares são vistas como mais valiosas.
+
+**Localização e Vista**
+**waterfront1 (`+0,398`):** Ter vista para a água está associado a um aumento de quase `40%` no preço, o que mostra o alto valor de localização privilegiada.
+
+**view1 a view4 (`+13%` a `+28%`):** Quanto melhor a vista (em uma escala de 1 a 4), maior o preço do imóvel. Por exemplo, view4 (melhor vista) está associada a um aumento de `28,2%` no preço.
+
+**Condição do Imóvel**
+**condition2 a condition5 (efeitos negativos):** Todos os níveis de condição, comparados ao nível base (provavelmente "condition1", o pior), têm efeitos negativos, o que pode parecer contraintuitivo. No entanto, isso ocorre porque o modelo inclui também a interação entre condição e idade da casa.
+
+**Qualidade e Idade**
+grade (`+0,186`): Cada ponto adicional na nota da construção aumenta o preço em cerca de `18,6%`, sendo um dos fatores mais importantes no modelo.
+
+**house_age (`-0,004`):** A cada ano de idade da casa, o preço tende a cair em `0,4%`, o que é esperado. No entanto, isso é modulado por interações, como abaixo.
+
+**Interações entre idade da casa e condição**
+
+Os efeitos da idade dependem da condição do imóvel:
+
+Por exemplo, uma casa com condição 4 e mais antiga apresenta um efeito total positivo de cerca de:
+`-0,00438` (house_age) `+ 0,00922` (interação) ≈ `+0,0048` por ano, ou seja, nesses casos, a idade da casa pode até valorizar o imóvel se ele estiver bem conservado.
+
+O mesmo vale para condições 2, 3 e 5, ou seja, quanto melhor a condição, menos negativa (ou até positiva) é a influência da idade no preço.
+
+**Localização geográfica**
+**lat (`+1,339`):** Um aumento na latitude (mais ao norte) está associado a um aumento expressivo no preço, o que pode indicar regiões mais valorizadas ao norte do condado.
+
+**long (`+0,072`):** Um aumento na longitude (mais a leste) também tem um efeito positivo, embora muito menor que o da latitude.
+
+# Considerações Finais
+O presente estudo teve como objetivo identificar os principais fatores que influenciam o preço de venda de imóveis em King County, utilizando modelos de regressão linear múltipla com transformação logarítmica na variável resposta. Com base nos dados disponíveis e nas análises realizadas, foi possível construir um modelo robusto, capaz de explicar cerca de 76% da variação observada nos preços dos imóveis.
+
+Dentre as variáveis analisadas, destacaram-se como mais relevantes: a área útil da casa (log(sqft_living)), a qualidade da construção (grade), a localização geográfica (latitude), o número de banheiros e a presença de vista privilegiada (view e waterfront). Tais características apresentaram forte associação positiva com o logaritmo do preço dos imóveis, reforçando a importância de atributos estruturais e geográficos na valorização imobiliária.
+
+Além disso, verificou-se que a idade da casa, embora inicialmente associada a uma depreciação do valor, pode exercer efeito menos negativo (ou até positivo) quando interage com boas condições de conservação. Esse achado destaca a importância de considerar interações entre variáveis no processo de modelagem.
+
+Do ponto de vista metodológico, a transformação logarítmica da variável resposta contribuiu para atender melhor aos pressupostos da regressão linear, especialmente no que diz respeito à homocedasticidade e normalidade dos resíduos. A ausência de multicolinearidade relevante, comprovada pelo VIF, e a análise gráfica dos resíduos reforçam a validade do modelo ajustado.
+
+Recomendações
+Com base nos resultados, recomenda-se que compradores, investidores e agentes do setor imobiliário priorizem imóveis com melhor acabamento (alta grade), maior metragem útil, boa localização (em especial nas regiões ao norte do condado), e com diferenciais como número maior de banheiros e vista para corpos d’água. Tais características tendem a apresentar maior valorização de mercado.
+
+Do ponto de vista de políticas públicas e planejamento urbano, os resultados podem contribuir para compreender dinâmicas de valorização imobiliária e desigualdade espacial, especialmente ao se observar a concentração de imóveis mais caros em determinadas áreas do condado.
+
+Limitações e Possibilidades Futuras
+Apesar dos bons resultados obtidos, o estudo possui limitações. A ausência de informações sobre aspectos socioeconômicos do entorno, variáveis temporais mais detalhadas ou fatores relacionados ao financiamento pode restringir o escopo interpretativo. Estudos futuros poderiam incorporar técnicas de regressão não linear ou métodos bayesianos para modelar incertezas, bem como realizar análises por segmentos de mercado (por exemplo, imóveis de alto padrão versus populares).
+
+Concluímos, portanto, que o modelo de regressão desenvolvido é adequado e informativo, fornecendo insights valiosos sobre os determinantes do preço de imóveis em King County.
+
+
+# 5. Referências
+
+- George, E.I., & McCulloch, R.E. (1993). *Variable Selection via Gibbs Sampling*. Journal of the American Statistical Association. [Link](https://moodle.ggte.unicamp.br/pluginfile.php/4239817/mod_resource/content/1/George-VariableSelectionViaGibbsSampling-1993.pdf)
+- [Kaggle - House Sales in King County](https://www.kaggle.com/datasets/harlfoxem/housesalesprediction)
