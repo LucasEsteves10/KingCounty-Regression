@@ -62,7 +62,7 @@ A análise revelou uma interação significativa entre a idade do imóvel e sua 
 
 1.  Clone este repositório:
     ```bash
-    git clone [https://github.com/SEU-USUARIO/SEU-REPOSITORIO.git](https://github.com/SEU-USUARIO/SEU-REPOSITORIO.git)
+    git clone https://github.com/LucasEsteves10/KingCounty-Regression.git
     ```
 2.  Abra o arquivo `relatorio.Rmd` ou `TRABALHO_REGRESSÃO.Rmd` no RStudio.
 3.  Certifique-se de que o arquivo de dados `kc_house_data.csv` esteja na subpasta `data/`.
