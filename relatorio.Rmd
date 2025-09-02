@@ -2,6 +2,7 @@
 title: "Análise de Regressão: Fatores que Influenciam o Preço de Imóveis em King County"
 author: 
   - Alessandro Silva
+  - Lucas Esteves de Oliveira
 lang: "pt-BR"
 output: 
   pdf_document:
@@ -24,7 +25,7 @@ options(scipen = 999,digits=2)
 ```
 
 ```{r}
-dados <- read.csv("C:/Users/Alessandro Silva/Downloads/kc_house_data.csv", fileEncoding = "UTF-8")
+dados <- read.csv("data/kc_house_data.csv", fileEncoding = "UTF-8")
 ```
 
 
@@ -96,7 +97,7 @@ dados$faixa_preco <- cut(dados$price,
                          breaks = c(0, 250000, 500000, 750000, 1000000, Inf),
                          labels = c("<250k", "250–500k", "500–750k", "750k–1M", ">1M"),
                          include.lowest = TRUE)
-king <- st_read("C:/Users/Alessandro Silva/Downloads/grafico reg/tl_2021_53033_roads.shp")
+king <- st_read("images/tl_2021_53033_roads.shp")
 dados_sf <- st_as_sf(dados, coords = c("long", "lat"), crs = 4326)
 ggplot() +
   geom_sf(data = king, fill = "gray90", color = "gray60") +
@@ -120,7 +121,7 @@ A figura \@ref(tab:grafico-geografico)apresenta a distribuição geográfica dos
 
 ## Pré-processamento
 ```{r}
-dados <- read.csv("C:/Users/Alessandro Silva/Downloads/kc_house_data.csv")
+dados <- read.csv("data/kc_house_data.csv")
 dados <- dados %>% 
   filter(bedrooms <= 15) %>% 
   mutate(

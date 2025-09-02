@@ -1,6 +1,6 @@
 ---
 title: "trab regressão - códigos"
-author: "Alessandro"
+author: "Lucas e Alessandro"
 date: "2025-05-26"
 output: html_document
 encoding: UTF-8
@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-dados <- read.csv("C:/Users/Alessandro Silva/Downloads/kc_house_data.csv", fileEncoding = "UTF-8")
+dados <- read.csv("data/kc_house_data.csv", fileEncoding = "UTF-8")
 library(dplyr)
 library(sf)
 library(ggplot2)
@@ -86,7 +86,7 @@ dados$faixa_preco <- cut(dados$price,
 ```
 
 ```{r}
-king <- st_read("C:/Users/Alessandro Silva/Downloads/grafico reg/tl_2021_53033_roads.shp")
+king <- st_read("images/tl_2021_53033_roads.shp")
 ```
 ```{r}
 dados_sf <- st_as_sf(dados, coords = c("long", "lat"), crs = 4326)
