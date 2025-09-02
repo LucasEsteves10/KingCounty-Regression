@@ -53,7 +53,7 @@ O modelo final conseguiu explicar **76.4%** da variação no logaritmo do preço
 ### Visualização Chave: Distribuição Geográfica dos Preços
 O mapa abaixo ilustra a concentração de imóveis de alto valor (>1M) em regiões específicas, validando a importância das variáveis de localização no modelo.
 
-![Distribuição de Imóveis por Preço](images/mapa_preco_imoveis.png)
+![Distribuição de Imóveis por Preço](images/mapa.png)
 
 ### Interação Relevante: Idade vs. Condição
 A análise revelou uma interação significativa entre a idade do imóvel e sua condição. Enquanto imóveis em más condições perdem valor com o tempo, aqueles em **boas condições podem até se valorizar com o passar dos anos**, como mostra o gráfico de efeitos preditos.
